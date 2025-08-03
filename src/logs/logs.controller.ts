@@ -10,13 +10,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { LogsService } from './logs.service';
 import { LogEntry } from './entities/log-entry.entity';
-
-interface PaginatedLogs {
-  data: LogEntry[];
-  total: number;
-  page: number;
-  limit: number;
-}
+import { Response } from 'express';
+import { Res } from '@nestjs/common';
 
 @Controller('logs')
 export class LogsController {
@@ -54,5 +49,22 @@ export class LogsController {
       sort: sort as keyof LogEntry,
       sortOrder,
     });
+  }
+
+  @Get('export')
+  async exportCsv(
+    @Res() res: Response,
+    @Query('vehicleId') vehicleId?: string,
+    @Query('level') level?: string,
+    @Query('code') code?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('sort') sort: keyof LogEntry = 'timestamp',
+    @Query('sortOrder') sortOrder: 'asc' | 'desc' = 'asc',
+  ) {
+    const csv = await this.logsService.exportCsv({ vehicleId, level, code, from, to, sort, sortOrder });
+    res.setHeader('Content-Disposition', 'attachment; filename=logs.csv');
+    res.setHeader('Content-Type', 'text/csv');
+    res.send(csv);
   }
 }

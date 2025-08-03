@@ -3,14 +3,7 @@ import { LogEntry } from './entities/log-entry.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Raw } from 'typeorm';
-
-interface PaginatedResult<T> {
-  data: T[];
-  total: number;
-  level: string;
-  page: number;
-  limit: number;
-}
+import { Parser } from 'json2csv';
 
 @Injectable()
 export class LogsService {
@@ -169,5 +162,19 @@ export class LogsService {
       page,
       limit
     };
+  }
+
+  async exportCsv(filters: {
+    vehicleId?: string;
+    level?: string;
+    code?: string;
+    from?: string;
+    to?: string;
+    sort?: keyof LogEntry;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<string> {
+    const data = await this.getLogs({ ...filters, page: 1, limit: 10000 }); // Large limit to get "all"
+    const parser = new Parser();
+    return parser.parse(data.data); // Only CSV of log entries
   }
 }
