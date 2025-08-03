@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LogEntry } from './entities/log-entry.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Raw } from 'typeorm';
 
 interface PaginatedResult<T> {
   data: T[];
@@ -100,16 +101,29 @@ export class LogsService {
     if (vehicleId) where.vehicleId = vehicleId;
     if (level) where.level = level;
     if (code) where.code = code;
-    if (from || to) {
-      where.timestamp = {};
-      if (from) where.timestamp['$gte'] = from;
-      if (to) where.timestamp['$lte'] = to;
+
+    // Proper date filtering using Raw
+    if (from && to) {
+      where.timestamp = Raw(
+        (alias) => `${alias} BETWEEN :from AND :to`,
+        { from, to }
+      );
+    } else if (from) {
+      where.timestamp = Raw(
+        (alias) => `${alias} >= :from`,
+        { from }
+      );
+    } else if (to) {
+      where.timestamp = Raw(
+        (alias) => `${alias} <= :to`,
+        { to }
+      );
     }
 
     const [data, total] = await this.logRepository.findAndCount({
       where,
       order: {
-        [sort]: sortOrder.toUpperCase(), // ASC or DESC
+        [sort]: sortOrder.toUpperCase(), // 'ASC' or 'DESC'
       },
       skip: (page - 1) * limit,
       take: limit,
@@ -122,8 +136,6 @@ export class LogsService {
       limit,
     };
   }
-
-
 
   getLogCount(): number {
     return this.logs.length;
