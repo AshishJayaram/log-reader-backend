@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { LogEntry } from './entities/log-entry.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 interface PaginatedResult<T> {
   data: T[];
@@ -13,16 +15,27 @@ interface PaginatedResult<T> {
 export class LogsService {
   private logs: LogEntry[] = [];
 
+  constructor(
+      @InjectRepository(LogEntry)
+      private readonly logRepository: Repository<LogEntry>,
+    ) {}
   parseLogLine(line: string): LogEntry | null {
-    const regex = /\[(.+?)\] \[VEHICLE_ID:(\d+)\] \[(\w+)\] \[CODE:(\w+)\] \[(.+)\]/;
-    const match = line.match(regex);
-    if (!match) return null;
-    const [, timestamp, vehicleId, level, code, message] = match;
-    return { timestamp, vehicleId, level, code, message };
+  const regex = /\[(.+?)\] \[VEHICLE_ID:(\d+)\] \[(\w+)\] \[CODE:(\w+)\] \[(.+)\]/;
+  const match = line.match(regex);
+  if (!match) return null;
+  const [, timestamp, vehicleId, level, code, message] = match;
 
-  }
+  return {
+    id: Date.now() + Math.random(),
+    timestamp,
+    vehicleId,
+    level,
+    code,
+    message
+  };
+}
 
-  addLogsFromFile(content: string) {
+  async addLogsFromFile(content: string) {
     const lines = content.split('\n');
     const regex = /\[(.+?)\] \[VEHICLE_ID:(\d+)\] \[(\w+)\] \[CODE:(\w+)\] \[(.+)\]/;
 
@@ -30,7 +43,14 @@ export class LogsService {
       const match = line.match(regex);
       if (match) {
         const [, timestamp, vehicleId, level, code, message] = match;
-        this.logs.push({ timestamp, vehicleId, level, code, message });
+
+        await this.logRepository.save({
+          timestamp,
+          vehicleId,
+          level,
+          code,
+          message
+        });
       }
     }
   }
@@ -52,7 +72,7 @@ export class LogsService {
     });
   }
 
-  getLogs(filters: {
+  async getLogs(filters: {
     page: number;
     limit: number;
     vehicleId?: string;
@@ -60,37 +80,49 @@ export class LogsService {
     code?: string;
     from?: string;
     to?: string;
-    sort?: string;
+    sort?: keyof LogEntry;
     sortOrder?: 'asc' | 'desc';
   }) {
-    let results = [...this.logs]; // logs stored in memory
+    const {
+      page,
+      limit,
+      vehicleId,
+      level,
+      code,
+      from,
+      to,
+      sort = 'timestamp',
+      sortOrder = 'asc',
+    } = filters;
 
-    const { page, limit, vehicleId, level, code, from, to, sort = 'timestamp', sortOrder = 'asc' } = filters;
+    const where: any = {};
 
-    if (vehicleId) results = results.filter(log => log.vehicleId === vehicleId);
-    if (level) results = results.filter(log => log.level === level);
-    if (code) results = results.filter(log => log.code === code);
-    if (from) results = results.filter(log => new Date(log.timestamp) >= new Date(from));
-    if (to) results = results.filter(log => new Date(log.timestamp) <= new Date(to));
+    if (vehicleId) where.vehicleId = vehicleId;
+    if (level) where.level = level;
+    if (code) where.code = code;
+    if (from || to) {
+      where.timestamp = {};
+      if (from) where.timestamp['$gte'] = from;
+      if (to) where.timestamp['$lte'] = to;
+    }
 
-    results = results.sort((a, b) => {
-      const valA = a[sort];
-      const valB = b[sort];
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
+    const [data, total] = await this.logRepository.findAndCount({
+      where,
+      order: {
+        [sort]: sortOrder.toUpperCase(), // ASC or DESC
+      },
+      skip: (page - 1) * limit,
+      take: limit,
     });
 
-    const offset = (page - 1) * limit;
-    const paginated = results.slice(offset, offset + limit);
-
     return {
-      data: paginated,
-      total: results.length,
+      data,
+      total,
       page,
-      limit
+      limit,
     };
   }
+
 
 
   getLogCount(): number {

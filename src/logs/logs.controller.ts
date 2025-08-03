@@ -51,7 +51,7 @@ export class LogsController {
       level,
       from,
       to,
-      sort,
+      sort: sort as keyof LogEntry,
       sortOrder,
     });
   }
